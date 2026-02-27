@@ -3,7 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import albums, artists, auth, playlists, search, tracks, users
+from app.api.v1 import admin, albums, artists, auth, playlists, search, tracks, users
 from app.core.config import settings
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
@@ -49,7 +49,4 @@ app.include_router(tracks.router, prefix="/api/v1/tracks", tags=["tracks"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
 app.include_router(users.router, prefix="/api/v1/me", tags=["users"])
 app.include_router(playlists.router, prefix="/api/v1/playlists", tags=["playlists"])
-
-# Router registration — uncomment as you build each resource
-# from app.api.v1 import admin
-# app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])

@@ -26,8 +26,12 @@ async def get_track_endpoint(track_id: uuid.UUID, db: DB) -> dict:
 
 @router.get("/{track_id}/stream")
 async def get_stream_url_endpoint(track_id: uuid.UUID, db: DB) -> dict:
-    """Return a presigned streaming URL for the track, or 404 if not found."""
+    """Return a presigned streaming URL for the track.
+
+    Returns 404 if the track does not exist or has no audio file uploaded yet.
+    Returns 503 (propagated from service) if R2 is temporarily unreachable.
+    """
     url = await get_stream_url(db=db, track_id=track_id)
     if url is None:
-        raise HTTPException(status_code=404, detail="Track not found")
+        raise HTTPException(status_code=404, detail="Track not found or audio not available")
     return ok({"url": url})

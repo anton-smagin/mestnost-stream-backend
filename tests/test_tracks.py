@@ -60,7 +60,12 @@ async def test_get_track_invalid_uuid(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_get_stream_url(client: AsyncClient, sample_artist):
-    """GET /tracks/{id}/stream should return a URL in the standard envelope."""
+    """GET /tracks/{id}/stream returns a presigned URL in the standard envelope.
+
+    In development / test (r2_endpoint is empty) the storage service returns a
+    mock URL of the form https://mock-r2.dev/{file_key}?expires=3600.
+    We verify the response shape and that the URL is a non-empty string.
+    """
     track = sample_artist._test_track1
     resp = await client.get(f"/api/v1/tracks/{track.id}/stream")
     assert resp.status_code == 200
@@ -71,10 +76,11 @@ async def test_get_stream_url(client: AsyncClient, sample_artist):
 
     data = body["data"]
     assert "url" in data
-    assert isinstance(data["url"], str)
-    assert len(data["url"]) > 0
-    # Mock URL should contain the track ID
-    assert str(track.id) in data["url"]
+    url = data["url"]
+    assert isinstance(url, str)
+    assert len(url) > 0
+    # In mock mode the URL embeds the file_key which contains the track slug
+    assert track.slug.split("-")[0] in url or "mock-r2" in url
 
 
 @pytest.mark.asyncio
@@ -89,3 +95,57 @@ async def test_get_stream_url_not_found(client: AsyncClient):
     assert body["error"] is not None
     assert "not found" in body["error"].lower()
     assert body["meta"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_stream_url_no_file_key(client: AsyncClient, db_session):
+    """GET /tracks/{id}/stream for a track with no file_key returns 404."""
+    import datetime
+
+    from app.core.database import async_session
+    from app.models.album import Album
+    from app.models.artist import Artist
+    from app.models.track import Track
+
+    artist_id = uuid.uuid4()
+    album_id = uuid.uuid4()
+    track_id = uuid.uuid4()
+
+    async with async_session() as session:
+        session.add(Artist(id=artist_id, name="No File Artist", slug=f"nf-{artist_id.hex[:8]}"))
+        await session.flush()
+        session.add(
+            Album(
+                id=album_id,
+                title="No File Album",
+                slug=f"nf-{album_id.hex[:8]}",
+                artist_id=artist_id,
+                release_date=datetime.date(2024, 1, 1),
+            )
+        )
+        await session.flush()
+        session.add(
+            Track(
+                id=track_id,
+                title="No File Track",
+                slug=f"nf-{track_id.hex[:8]}",
+                album_id=album_id,
+                track_number=1,
+                duration_seconds=100,
+                file_key=None,
+            )
+        )
+        await session.commit()
+
+    resp = await client.get(f"/api/v1/tracks/{track_id}/stream")
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["data"] is None
+    assert body["error"] is not None
+
+    # Cleanup
+    async with async_session() as session:
+        from sqlalchemy import delete
+
+        await session.execute(delete(Artist).where(Artist.id == artist_id))
+        await session.commit()

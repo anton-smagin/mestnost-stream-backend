@@ -67,14 +67,46 @@ async with async_session() as session:
 `selectinload(Model.rel).order_by(...)` is NOT supported — raises `AttributeError: 'Load' object has no attribute 'order_by'`.
 Workaround: sort in Python after loading: `obj.tracks.sort(key=lambda t: t.track_number)`
 
-### Registered Routers (as of Phase 2.6)
+### Registered Routers (as of Phase 3.3)
 - `/api/v1/auth` — POST /register, POST /login
 - `/api/v1/artists` — GET / (paginated), GET /{slug} (with albums)
 - `/api/v1/albums` — GET /{id} (with tracks sorted by track_number, with artist)
-- `/api/v1/tracks` — GET /{id}, GET /{id}/stream (mock URL; Phase 3 = real R2 presigned)
+- `/api/v1/tracks` — GET /{id}, GET /{id}/stream (real R2 presigned URL, mock in dev)
 - `/api/v1/search` — GET /?q= (ILIKE search across artists, albums, tracks; 5 results/type)
 - `/api/v1/me` — GET / (profile), GET/POST /history, GET /likes, POST/DELETE /likes/{id}
 - `/api/v1/playlists` — full CRUD + POST /{id}/tracks, DELETE /{id}/tracks/{track_id}
+- `/api/v1/admin` — POST /artists, POST /albums, POST /tracks (multipart); all require auth
+
+### R2 / Storage Service (Phase 3)
+- File: `app/services/storage.py`
+- Mock mode when `settings.r2_endpoint` is empty (dev/test safe — no real R2 calls)
+- Mock URL format: `https://mock-r2.dev/{file_key}?expires=3600`
+- Key format: `tracks/{artist_slug}/{album_slug}/{NN:02d}_{track_slug}.flac`
+- `compute_file_key()` is pure sync; upload/delete/presign are async (import aioboto3 inside)
+- aioboto3 is already in pyproject.toml dependencies
+
+### Admin Service Patterns (Phase 3)
+- File: `app/services/admin.py`
+- All operations check for conflicts (409) before inserting
+- Uses `db.flush()` + `db.refresh()` — NOT commit (that's done by get_db dependency)
+- Track slugification: `_slugify()` — lowercase, spaces→hyphens, strip non-alphanumeric
+
+### Multipart Form Upload Pattern (B008 noqa required)
+```python
+from fastapi import File, Form, UploadFile
+title: str = Form(...),  # noqa: B008
+audio_file: UploadFile = File(...),  # noqa: B008
+audio_data = await audio_file.read()
+content_type = audio_file.content_type or "audio/flac"
+```
+
+### Test: Duplicate Slug Test Pattern
+Fixture track slugs have unique hex suffix (`first-track-{hex}`) — can't rely on fixture data for slug collisions. Instead: create a track via API, then attempt to create another with same title.
+
+### Bulk Upload Script
+- File: `scripts/upload_tracks.py`
+- Uses sync SQLAlchemy + asyncio.run() for uploads
+- Directory structure: `{root}/{artist-slug}/{album-slug}/{NN}_{track-slug}.flac`
 
 ### ORM Field vs. API Field Naming (PlaylistDetail)
 `Playlist.playlist_tracks` (ORM) → `tracks` (API). Use Pydantic `Field(validation_alias=...)`:
