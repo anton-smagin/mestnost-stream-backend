@@ -4,13 +4,7 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from app.core.config import settings
-from app.models.base import Base
-
-# Import all models here so autogenerate detects them
-# from app.models.artist import Artist
-# from app.models.album import Album
-# from app.models.track import Track
-# ... uncomment as you create them
+from app.models import Base  # noqa: F401 — triggers all model imports
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url_sync)
