@@ -28,7 +28,9 @@ class Album(TimestampMixin, Base):
 
     # Relationships
     artist: Mapped["Artist"] = relationship("Artist", back_populates="albums")
-    tracks: Mapped[list["Track"]] = relationship("Track", back_populates="album")
+    tracks: Mapped[list["Track"]] = relationship(
+        "Track", back_populates="album", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint("artist_id", "slug", name="uq_albums_artist_id_slug"),

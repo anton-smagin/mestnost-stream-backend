@@ -303,3 +303,85 @@ async def test_playlist_ownership_check(client: AsyncClient, auth_headers):
     body = resp.json()
     assert body["data"] is None
     assert body["error"] is not None
+
+
+@pytest.mark.asyncio
+async def test_get_private_playlist_forbidden_for_other_user(client: AsyncClient, auth_headers):
+    """GET /playlists/{id} on a private playlist belonging to another user should return 403."""
+    # Create a private playlist as the primary test user
+    create_resp = await client.post(
+        PLAYLISTS_URL,
+        json={"name": "Secret Playlist", "is_public": False},
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 200
+    playlist_id = create_resp.json()["data"]["id"]
+
+    # A second user tries to read it — should be denied
+    other_headers, _ = await _create_second_user_headers()
+
+    resp = await client.get(f"{PLAYLISTS_URL}{playlist_id}", headers=other_headers)
+    assert resp.status_code == 403
+
+    body = resp.json()
+    assert body["data"] is None
+    assert body["error"] is not None
+
+
+@pytest.mark.asyncio
+async def test_get_public_playlist_accessible_by_other_user(client: AsyncClient, auth_headers):
+    """GET /playlists/{id} on a public playlist should succeed for any authenticated user."""
+    # Create a public playlist as the primary test user
+    create_resp = await client.post(
+        PLAYLISTS_URL,
+        json={"name": "Public Playlist", "is_public": True},
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 200
+    playlist_id = create_resp.json()["data"]["id"]
+
+    # A second user reads it — should succeed
+    other_headers, _ = await _create_second_user_headers()
+
+    resp = await client.get(f"{PLAYLISTS_URL}{playlist_id}", headers=other_headers)
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["error"] is None
+    assert body["data"]["name"] == "Public Playlist"
+
+
+@pytest.mark.asyncio
+async def test_add_same_track_twice_is_idempotent(client: AsyncClient, auth_headers, sample_artist):
+    """POST /playlists/{id}/tracks with a duplicate track_id returns the existing entry."""
+    track = sample_artist._test_track1
+
+    create_resp = await client.post(
+        PLAYLISTS_URL,
+        json={"name": "Idempotent Track Test"},
+        headers=auth_headers,
+    )
+    playlist_id = create_resp.json()["data"]["id"]
+
+    # First add
+    add1 = await client.post(
+        f"{PLAYLISTS_URL}{playlist_id}/tracks",
+        json={"track_id": str(track.id)},
+        headers=auth_headers,
+    )
+    assert add1.status_code == 200
+    assert add1.json()["data"]["position"] == 1
+
+    # Second add of the same track — must return the same entry
+    add2 = await client.post(
+        f"{PLAYLISTS_URL}{playlist_id}/tracks",
+        json={"track_id": str(track.id)},
+        headers=auth_headers,
+    )
+    assert add2.status_code == 200
+    assert add2.json()["data"]["id"] == add1.json()["data"]["id"]
+    assert add2.json()["data"]["position"] == 1
+
+    # Playlist must have exactly one track entry
+    get_resp = await client.get(f"{PLAYLISTS_URL}{playlist_id}", headers=auth_headers)
+    assert len(get_resp.json()["data"]["tracks"]) == 1

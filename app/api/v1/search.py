@@ -28,10 +28,15 @@ async def search_endpoint(
     """
     results = await search_service(db=db, query=q)
 
+    artists = [ArtistSummary.model_validate(a) for a in results["artists"]]
+    albums = [AlbumSummary.model_validate(a) for a in results["albums"]]
+    tracks = [TrackSummary.model_validate(t) for t in results["tracks"]]
+
     payload = SearchResults(
-        artists=[ArtistSummary.model_validate(a) for a in results["artists"]],
-        albums=[AlbumSummary.model_validate(a) for a in results["albums"]],
-        tracks=[TrackSummary.model_validate(t) for t in results["tracks"]],
+        artists=artists,
+        albums=albums,
+        tracks=tracks,
     ).model_dump(mode="json")
 
-    return ok(payload)
+    total = len(artists) + len(albums) + len(tracks)
+    return ok(payload, page=1, total=total)

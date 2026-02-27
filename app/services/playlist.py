@@ -196,6 +196,17 @@ async def add_track_to_playlist(
     if track_exists is None:
         raise HTTPException(status_code=404, detail="Track not found")
 
+    # Return existing entry if the track is already in the playlist (idempotent)
+    existing_pt = await db.scalar(
+        select(PlaylistTrack).where(
+            PlaylistTrack.playlist_id == playlist_id,
+            PlaylistTrack.track_id == track_id,
+        )
+    )
+    if existing_pt is not None:
+        await db.refresh(existing_pt, attribute_names=["track"])
+        return existing_pt
+
     # Determine next position (max + 1, or 1 if playlist is empty)
     max_position: int = (
         await db.scalar(

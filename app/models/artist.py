@@ -18,7 +18,9 @@ class Artist(TimestampMixin, Base):
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Relationships
-    albums: Mapped[list["Album"]] = relationship("Album", back_populates="artist")
+    albums: Mapped[list["Album"]] = relationship(
+        "Album", back_populates="artist", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index(

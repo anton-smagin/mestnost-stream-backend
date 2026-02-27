@@ -72,10 +72,15 @@ async def get_playlist_endpoint(
     db: DB,
     user_id: CurrentUserID,
 ) -> dict:
-    """Return playlist detail with all tracks."""
+    """Return playlist detail with all tracks.
+
+    Raises 403 if the playlist is private and the requesting user does not own it.
+    """
     playlist = await get_playlist(db=db, playlist_id=playlist_id)
     if playlist is None:
         raise HTTPException(status_code=404, detail="Playlist not found")
+    if not playlist.is_public and playlist.user_id != uuid.UUID(user_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
     return ok(PlaylistDetail.model_validate(playlist).model_dump(mode="json"))
 
 
